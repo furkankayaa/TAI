@@ -1,2 +1,2 @@
 # TAI
-Financial Calculation UI Project
+Financial Management Tool 
