@@ -8,6 +8,7 @@
 # WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
+from email.policy import default
 import sys
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -24,7 +25,7 @@ class Ui_MainWindow(object):
 
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(735, 530)
+        MainWindow.resize(735, 560)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
 
@@ -62,12 +63,59 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
         self.scrollArea.setWidgetResizable(True)
 
+        self.symbol_label = QLabel(self.centralwidget)
+        self.symbol_label.setObjectName("symbol_label")
+        self.symbol_label.setGeometry(QRect(80, 115, 35, 25))
+        self.symbol_label.setText('Stock')
+        self.symbol_label.setStyleSheet("font-weight: bold")
+
+        self.price_label = QLabel(self.centralwidget)
+        self.price_label.setObjectName("price_label")
+        self.price_label.setGeometry(QRect(130, 115, 30, 25))
+        self.price_label.setText('Price')
+        self.price_label.setStyleSheet("font-weight: bold")
+
+        self.quantity_label = QLabel(self.centralwidget)
+        self.quantity_label.setObjectName("quantity_label")
+        self.quantity_label.setGeometry(QRect(175, 115, 50, 25))
+        self.quantity_label.setText('Quantity')
+        self.quantity_label.setStyleSheet("font-weight: bold")
+        
+        self.ratio_label = QLabel(self.centralwidget)
+        self.ratio_label.setObjectName("ratio_label")
+        self.ratio_label.setGeometry(QRect(260, 115, 30, 25))
+        self.ratio_label.setText('Ratio')
+        self.ratio_label.setStyleSheet("font-weight: bold")
+        
+
+        self.result_label = QLabel(self.centralwidget)
+        self.result_label.setGeometry(QRect(475, 115, 90, 25))
+        self.result_label.setText('Sell Quantity')
+        self.result_label.setStyleSheet("font-weight: bold")
+        self.result_label.hide()
+
+        self.remaining_ratio_label = QLabel(self.centralwidget)
+        self.remaining_ratio_label.setGeometry(QRect(260, 495, 150, 25))
+        self.remaining_ratio_label.setText("Remaining ratio: 100")
+        self.remaining_ratio_label.setStyleSheet("font-weight: bold")
+
+        self.sell_value_label = QLabel(self.centralwidget)
+        self.sell_value_label.setGeometry(QRect(260, 508, 150, 25))
+        self.sell_value_label.setStyleSheet("font-weight: bold")
+        
+        
         ####### Daha sonra Qt designerla düzenle
         self.logOut_button = QPushButton(self.centralwidget)
         self.logOut_button.setObjectName("logOut_button")
         self.logOut_button.setGeometry(QRect(670,10,50,25))
         self.logOut_button.setText("Log Out")
         #######
+
+        self.remove_button = QPushButton(self.centralwidget)
+        self.remove_button.setObjectName("remove_button")
+        self.remove_button.setGeometry(QRect(20,115,50,25))
+        self.remove_button.setText("Remove")
+
         self.symboledit = QLineEdit(self.centralwidget)
         self.symboledit.setObjectName(u"symboledit")
         self.symboledit.setGeometry(QRect(20, 60, 101, 23))
@@ -84,7 +132,6 @@ class Ui_MainWindow(object):
         self.status.setObjectName(u"status")
         self.status.setGeometry(QRect(20,85, 200,23))
         self.status.hide()
-        
 
         self.addbutton = QPushButton(self.centralwidget)
         self.addbutton.setObjectName(u"addbutton")
@@ -107,13 +154,15 @@ class Ui_MainWindow(object):
         self.applybutton.setGeometry(QRect(410, 60, 41, 23))
         self.sellheader = QLabel(self.centralwidget)
         self.sellheader.setObjectName(u"sellheader")
-        self.sellheader.setGeometry(QRect(300, 30, 31, 16))
+        self.sellheader.setGeometry(QRect(310, 30, 31, 16))
         self.sellheader.setStyleSheet(u"font: 12pt bold \"Sans Serif\";")
 
         self.sell = sell_widget(self.centralwidget)
 
         # hide Sell block elements
         self.hideSellBlockHeader()
+        # hide Ratio labels
+        self.hideRatioLabels()
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
@@ -150,6 +199,14 @@ class Ui_MainWindow(object):
         timer = QTimer()
         timer.singleShot(2000, self.status.hide)
 
+    def hideRatioLabels(self):
+        self.ratio_label.hide()
+        self.remaining_ratio_label.hide()
+        self.sell_value_label.hide()
+    def showRatioLabels(self):
+        self.ratio_label.show()
+        self.remaining_ratio_label.show()
+        self.sell_value_label.show()
 
     def hideSellBlockHeader(self):
         self.selledit.hide()

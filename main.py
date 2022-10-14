@@ -1,7 +1,8 @@
-from socket import SO_ACCEPTCONN
 import sys
+import os
 from functools import partial
 from hashlib import sha256
+from datetime import datetime
 
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import *
@@ -13,6 +14,7 @@ from components import *
 import requests
 import http.client
 import json
+import csv
 
 import sqlite3
 
@@ -32,6 +34,7 @@ cursor.execute("""CREATE TABLE if not exists stocks(
 connection.commit()
 connection.close()
 
+
 class Login_screen(QDialog):
     def __init__(self):
         super(Login_screen, self).__init__()
@@ -46,14 +49,16 @@ class Login_screen(QDialog):
         self.accept()
         # self.program.show()
 
+    @pyqtSlot()
     def signUp_screen(self):
         self.createAcc = SignUp_screen()
         self.createAcc.open()
 
+    @pyqtSlot()
     def logIn(self):
         user = self.nameEdit.text()
         password = self.pwEdit.text()
-        
+
         hashed = hash_pw(password)
 
         if user == "" or password == "":
@@ -62,7 +67,7 @@ class Login_screen(QDialog):
             conn = sqlite3.connect("stock_seller.db")
             cur = conn.cursor()
             find = """SELECT password, userid FROM users WHERE username = ?"""
-            cur.execute(find,(user,))
+            cur.execute(find, (user,))
             result = cur.fetchone()
             conn.close()
             if result != None:
@@ -76,10 +81,12 @@ class Login_screen(QDialog):
                     self.status.setText("Invalid username or password!")
             else:
                 self.status.setText("Invalid username or password!")
-    
-    def closeEvent(self, event) :
+
+    def closeEvent(self, event):
         sys.exit()
 
+
+@pyqtSlot()
 class SignUp_screen(QDialog):
     def __init__(self):
         super(SignUp_screen, self).__init__()
@@ -87,11 +94,12 @@ class SignUp_screen(QDialog):
         self.setWindowModality(Qt.ApplicationModal)
         self.signupButton.clicked.connect(self.signUp)
 
+    @pyqtSlot()
     def signUp(self):
         user = self.nameEdit.text()
         password = self.pwEdit.text()
         confirm_pw = self.confirm_pw.text()
-        
+
         hashed = hash_pw(password)
 
         isExists = self.user_exists(user)
@@ -114,8 +122,7 @@ class SignUp_screen(QDialog):
                 self.status.setText("Successfully signed up!")
             except Exception as error:
                 self.status.setText("err code: " + str(error))
-        
-    
+
     def user_exists(self, username):
         conn = sqlite3.connect("stock_seller.db")
         cur = conn.cursor()
@@ -127,42 +134,51 @@ class SignUp_screen(QDialog):
             return True
         return False
 
-    
 
-#loading modal self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.CustomizeWindowHint | Qt.Dialog | Qt.FramelessWindowHint)
+# loading modal self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.CustomizeWindowHint | Qt.Dialog | Qt.FramelessWindowHint)
 class Loading_modal(QDialog):
     pass
+
+
 class StockSeller(QMainWindow, Ui_MainWindow):
     def __init__(self, userid, parent=None):
         super(StockSeller, self).__init__()
         self.shares_list = []
         self.quantity_list = []
         self.stocks_dict = {}
-        
+
+        self.to_be_sold = []
         self.shares_widgets = []
         self.uid = userid
         self.totalSharesValue = 0
         self.sellVal = 0
-        self.tempSellVal = 0
         self.allDoneClicked = False
         self.return_to_login = False
 
         self.setupUi(self)
         self.get_stocks()
         self.events()
+        self.append_stocks_to_list()
 
         self.show()
+
     def events(self):
         self.addbutton.clicked.connect(self.addShares)
         self.applybutton.clicked.connect(self.toSellApply)
         self.donebutton.clicked.connect(self.allDone)
         self.logOut_button.clicked.connect(self.logOut)
+        self.remove_button.clicked.connect(self.removeStock)
 
+    def append_stocks_to_list(self):
+        self.shares_widgets.clear()
+        for i in range(self.vl.count()):
+            widget_i = self.vl.itemAt(i).widget()
+            self.shares_widgets.append(widget_i)
 
     def get_stocks(self):
 
-        ### Güncel fiyatlar, API request
-        
+        # Güncel fiyatlar, API request
+
         # conn = http.client.HTTPSConnection("api.collectapi.com")
         # headers = {
         #         'content-type': "application/json",
@@ -180,8 +196,8 @@ class StockSeller(QMainWindow, Ui_MainWindow):
         # with open("stocks.json","w") as out:
         #     json.dump(self.data, out)
         ###
-    
-        ### Json dosyasına kaydedilmiş data
+
+        # Json dosyasına kaydedilmiş data
         self.data = ""
         with open("stocks.json") as readFile:
             self.data = json.load(readFile)
@@ -205,29 +221,28 @@ class StockSeller(QMainWindow, Ui_MainWindow):
         listitem.setMaximumHeight(50)
         self.vl.addWidget(listitem)
 
-
+    @pyqtSlot()
     def addShares(self):
         if self.allDoneClicked == True and self.symboledit.text() != '' and self.quantityedit.text() != '':
-            self.shares_widgets.clear()
             self.hideSellBlockHeader()
             self.selledit.clear()
             self.allDoneClicked = False
 
-        if self.symboledit.text() != '' and self.quantityedit.text() != '':
+        if self.symboledit.text() != '' and self.quantityedit.text() != '' and int(self.quantityedit.text()) != 0:
             symbol = self.symboledit.text().upper().strip()
             quantity = self.quantityedit.text()
 
             if symbol in self.stocks_dict.keys() and quantity.isdigit():
                 quantity = int(quantity)
                 self.status_success()
-                #insert stock into database
+                # insert stock into database
                 self.insert_stock(self.uid, symbol, quantity)
-
-                # delete all widgets in layout
-                for i in reversed(range(self.vl.count())):
-                    self.vl.itemAt(i).widget().setParent(None)
-                
                 self.show_shares()
+                self.append_stocks_to_list()
+
+                # log csv
+                buy_value = self.stocks_dict[symbol]*quantity
+                log_shares(self.uid, symbol, quantity, buy_value, "BUY")
 
                 self.symboledit.clear()
                 self.quantityedit.clear()
@@ -235,16 +250,19 @@ class StockSeller(QMainWindow, Ui_MainWindow):
                 self.status_fail("WRONG_SYM")
         else:
             self.status_fail("MISSING_INP")
-            
+
     def show_shares(self):
-        #clear list before appending all from db again
+        # delete all widgets in layout
+        for i in reversed(range(self.vl.count())):
+            self.vl.itemAt(i).widget().setParent(None)
+        # clear list before appending all from db again
         self.shares_list.clear()
         self.quantity_list.clear()
         self.totalSharesValue = 0
         for stock_sym, stock_qt in self.stocks_in_db(self.uid):
-            # update total shares value 
+            # update total shares value
             self.totalSharesValue += self.stocks_dict[stock_sym]*stock_qt
-            
+
             self.shares_list.append(stock_sym)
             self.quantity_list.append(stock_qt)
             self.generateSharesBlock(stock_sym, stock_qt, self.uid)
@@ -257,7 +275,7 @@ class StockSeller(QMainWindow, Ui_MainWindow):
         fetch = cur.fetchall()
         conn.close()
         return fetch
-        
+
     def count_stocks(self, id):
         conn = sqlite3.connect("stock_seller.db")
         cur = conn.cursor()
@@ -273,153 +291,260 @@ class StockSeller(QMainWindow, Ui_MainWindow):
         conn = sqlite3.connect("stock_seller.db")
         cur = conn.cursor()
         query = """SELECT quantity FROM stocks WHERE shares = ? and userid = ?"""
-        cur.execute(query,(share,id))
+        cur.execute(query, (share, id))
         fetch = cur.fetchone()
         if fetch == None:
             insert = """INSERT into stocks (userid, shares, quantity) values (?,?,?)"""
-            cur.execute(insert,(id,share,qt))
+            cur.execute(insert, (id, share, qt))
             conn.commit()
         else:
             update = """UPDATE stocks SET quantity = ? WHERE shares = ? and userid = ?"""
             new_qt = qt + fetch[0]
-            cur.execute(update,(new_qt, share, id))
+            cur.execute(update, (new_qt, share, id))
             conn.commit()
         conn.close()
 
     # 07.07 sadece ilk item için işlemler yapıldı
+    @pyqtSlot()
     def toSellApply(self):
-        if self.selledit.text() != '':
+
+        if self.selledit.text() != '' and int(self.selledit.text()) <= self.totalSharesValue and int(self.selledit.text()) != 0:
             for w in self.shares_widgets:
                 w.resetSlider()
                 w.hideSellBlockWidget()
+                self.hideRatioLabels
                 w.hideResult()
-            self.sellVal = int(self.selledit.text())
-            self.tempSellVal = self.sellVal
-            if self.sellVal <= self.totalSharesValue:
-                widget_i = self.shares_widgets[0]
+                self.result_label.hide()
+                if w.checkBox.isChecked():
+                    self.to_be_sold.append(w)
+
+            if len(self.to_be_sold) != 0:
+                for w in self.shares_widgets:
+                    w.checkBox.setEnabled(False)
+                self.sellVal = int(self.selledit.text())
+                self.sell_value_label.setText(
+                    f"Sell Value: {0}/{self.sellVal}")
+
+                widget_i = self.to_be_sold[0]
                 slider_i = widget_i.horizontalSlider
+                if len(self.to_be_sold) != 0:
 
-                widget_i.showSellBlockWidget()
+                    widget_i.showSellBlockWidget()
+                    self.showRatioLabels()
+                    list_index = self.shares_list.index(
+                        widget_i.stock_symbol.text())
+                    curr_stock_value = float(
+                        self.stocks_dict[self.shares_list[list_index]])*int(self.quantity_list[list_index])
+                    ratio = 100 if curr_stock_value > self.sellVal \
+                        else 100*curr_stock_value/self.sellVal
+                    widget_i.initSlider(int(ratio))
+                    slider_i.valueChanged.connect(
+                        partial(self.sliderOnChange, widget_i))
 
-                curr_stock_value = float(
-                    self.stocks_dict[self.shares_list[0]])*int(self.quantity_list[0])
-                ratio = 100 if curr_stock_value > self.sellVal \
-                    else 100*curr_stock_value/self.sellVal
-                widget_i.initSlider(int(ratio))
-                slider_i.valueChanged.connect(
-                    partial(self.sliderOnChange, widget_i))
+                    widget_i.buttonBox.accepted.connect(partial(self.OK, 1))
+                    widget_i.buttonBox.rejected.connect(
+                        partial(self.CANCEL, 0))
 
-                widget_i.buttonBox.accepted.connect(partial(self.OK, 1))
-                widget_i.buttonBox.rejected.connect(partial(self.CANCEL, 0))
+                    self.selledit.clear()
 
-                self.selledit.clear()
-
+    @pyqtSlot()
     def sell_stock(self):
         conn = sqlite3.connect("stock_seller.db")
         cur = conn.cursor()
-        for widget in self.shares_widgets:
+        for widget in self.to_be_sold:
             share = widget.stock_symbol.text()
+            price = float(widget.stock_price.text())
+            list_index = self.shares_list.index(share)
+
             sell_qt = int(widget.result_sell_quantity.text())
             update = """UPDATE stocks SET quantity = quantity - ? WHERE shares = ? and userid = ?"""
-            cur.execute(update,(sell_qt, share, self.uid))
-            
-            #update totalSharesValue
-            self.totalSharesValue -= sell_qt*self.stocks_dict[share]
+            cur.execute(update, (sell_qt, share, self.uid))
 
+            # log into csv file
+            value_sold = price*sell_qt
+            if value_sold != 0:
+                log_shares(self.uid, share, sell_qt, -value_sold, "SELL")
+
+            # update totalSharesValue
+            self.totalSharesValue -= sell_qt*self.stocks_dict[share]
             get = """SELECT quantity FROM stocks WHERE shares = ? and userid = ?"""
-            cur.execute(get,(share, self.uid))
+            cur.execute(get, (share, self.uid))
             new_qt = cur.fetchone()[0]
+
+            self.remaining_ratio_label.setText("Remaining ratio: 100")
+            self.sell_value_label.setText("Sell value: 0/0")
+            self.hideRatioLabels()
+            self.result_label.hide()
+
             if new_qt > 0:
+                self.quantity_list[list_index] = new_qt
                 widget.stock_quantity.setText(str(new_qt))
+                widget.hideSellBlockWidget()
+                widget.hideResult()
+
             else:
                 delete = """DELETE FROM stocks WHERE shares = ? and userid = ?"""
                 cur.execute(delete, (share, self.uid))
+                cancel_index = self.to_be_sold.index(widget)
                 delete_index = self.shares_widgets.index(widget)
 
-                #UPDATE UI after deletion
-                w_prev = self.shares_widgets[self.shares_widgets.index(widget)-1]
-                w_prev.sell_stock_button.clicked.connect(self.sell_stock)
-                self.CANCEL(delete_index)
+                # UPDATE UI after deletion
+                w_prev = self.to_be_sold[self.to_be_sold.index(widget)-1]
+                self.CANCEL(cancel_index)
                 self.vl.itemAt(delete_index).widget().setParent(None)
                 self.shares_widgets.remove(widget)
+
+                del self.shares_list[list_index]
+                del self.quantity_list[list_index]
+                w_prev.hideSellBlockWidget()
+                w_prev.hideResult()
             conn.commit()
-            widget.hideSellBlockWidget()
-            widget.hideResult()
+        conn.close()
+
+        # Reset checkboxes
+        self.to_be_sold.clear()
+        for w in self.shares_widgets:
+            w.checkBox.setEnabled(True)
+            w.checkBox.setChecked(False)
+
+    @pyqtSlot()
+    def removeStock(self):
+        conn = sqlite3.connect("stock_seller.db")
+        cur = conn.cursor()
+        for widget in list(self.shares_widgets):
+            share = widget.stock_symbol.text()
+            remove_qt = int(widget.stock_quantity.text())
+            price = float(widget.stock_price.text())
+            if widget.checkBox.isChecked() and widget.checkBox.isEnabled():
+                delete = """DELETE FROM stocks WHERE shares = ? and userid = ?"""
+                cur.execute(delete, (share, self.uid))
+
+                # log csv
+                remove_value = remove_qt*price
+                log_shares(self.uid, share, remove_qt, remove_value, "REMOVE")
+
+                self.totalSharesValue -= remove_value
+                delete_index = self.shares_widgets.index(widget)
+                self.vl.itemAt(delete_index).widget().setParent(None)
+                self.shares_widgets.remove(widget)
+
+                list_index = self.shares_list.index(share)
+                del self.shares_list[list_index]
+                del self.quantity_list[list_index]
+            conn.commit()
         conn.close()
 
     # 07.07.22
+    @pyqtSlot()
     def OK(self, index):
 
-        if index < len(self.shares_widgets):
+        if index <= len(self.to_be_sold):
             for widgets in self.shares_widgets:
                 widgets.buttonBox.hide()
                 widgets.isHidden = True
 
-            w_prev = self.shares_widgets[index-1]
+            w_prev = self.to_be_sold[index-1]
             s_prev = w_prev.horizontalSlider
-
-            widget_i = self.shares_widgets[index]
-            slider_i = widget_i.horizontalSlider
             w_prev.releaseVal = s_prev.value()
 
-            widget_i.buttonBox.accepted.connect(partial(self.OK, index+1))
-            widget_i.buttonBox.rejected.connect(partial(self.CANCEL, index))
+            if index != len(self.to_be_sold):
+                widget_i = self.to_be_sold[index]
+                slider_i = widget_i.horizontalSlider
 
-            widget_i.showSellBlockWidget()
+                widget_i.buttonBox.accepted.connect(
+                    partial(self.OK, index+1), type=Qt.UniqueConnection)
+                widget_i.buttonBox.rejected.connect(
+                    partial(self.CANCEL, index), type=Qt.UniqueConnection)
 
-            self.curr_stock_value = float(self.stocks_dict[self.shares_list[index]])*int(self.quantity_list[index])
-            remaining_ratio = self.ratioRemainsCalc(index)
-            self.ratio = remaining_ratio if self.curr_stock_value/self.sellVal > 1 else (100*self.curr_stock_value/self.sellVal
-                                                                               if remaining_ratio >= 100*self.curr_stock_value/self.sellVal
-                                                                               else remaining_ratio)
-            widget_i.initSlider(self.ratio)
+                widget_i.showSellBlockWidget()
+                self.showRatioLabels()
 
-            # add onChange event handler
-            slider_i.valueChanged.connect(
-                partial(self.sliderOnChange, widget_i))
-        elif index == len(self.shares_widgets):
-            self.shares_widgets[index-1].sell_stock_button.show()
-            for widgets in self.shares_widgets:
-                widgets.showResult(self.sellVal)
-                
+                list_index = self.shares_list.index(
+                    widget_i.stock_symbol.text())
+
+                self.curr_stock_value = float(
+                    self.stocks_dict[self.shares_list[list_index]])*int(self.quantity_list[list_index])
+                remaining_ratio = self.ratioRemainsCalc(index)
+                self.ratio = remaining_ratio if self.curr_stock_value > self.sellVal else (100*self.curr_stock_value/self.sellVal
+                                                                                           if remaining_ratio >= 100*self.curr_stock_value/self.sellVal
+                                                                                           else remaining_ratio)
+                widget_i.initSlider(self.ratio)
+
+                # add onChange event handler
+                slider_i.valueChanged.connect(
+                    partial(self.sliderOnChange, widget_i))
+            else:
+                self.to_be_sold[index-1].sell_stock_button.show()
+                for widgets in self.to_be_sold:
+                    widgets.showResult(self.sellVal)
+                    self.result_label.show()
+
     # 07.07.22
-
+    @pyqtSlot()
     def CANCEL(self, index):
-        if index == len(self.shares_widgets) - 1:
+        if index == len(self.to_be_sold) - 1:
             for widget in self.shares_widgets:
                 widget.hideResult()
+                self.result_label.hide()
         if index >= 0:
-            widget_i = self.shares_widgets[index]
+            widget_i = self.to_be_sold[index]
 
             widget_i.resetSlider()
             widget_i.hideSellBlockWidget()
             widget_i.hideResult()
+            self.result_label.hide()
 
             if index != 0:
-                self.shares_widgets[index-1].buttonBox.show()
-                self.shares_widgets[index-1].isHidden = False
+                self.to_be_sold[index-1].buttonBox.show()
+                self.to_be_sold[index-1].isHidden = False
+                remains = self.ratioRemainsCalc(index-1)
+                self.remaining_ratio_label.setText(
+                    "Remaining ratio: " + str(remains))
+            else:
+                for widget in self.shares_widgets:
+                    widget.checkBox.setEnabled(True)
+                self.remaining_ratio_label.setText("Remaining ratio: 100")
 
+                self.hideRatioLabels()
+                for w in self.to_be_sold:
+                    try:
+                        w.buttonBox.accepted.disconnect()
+                        w.buttonBox.rejected.disconnect()
+                    except Exception:
+                        pass
+                self.to_be_sold.clear()
+
+    @pyqtSlot()
     def allDone(self):
 
         if self.vl.count() != 0 and self.allDoneClicked == False:
             # add widgets into shares_widgets list
             for i in range(self.vl.count()):
                 widget_i = self.vl.itemAt(i).widget()
-                self.shares_widgets.append(widget_i)
-                if i == self.vl.count() -1:
-                    widget_i.sell_stock_button.clicked.connect(self.sell_stock)
-
+                widget_i.sell_stock_button.clicked.connect(self.sell_stock)
 
             self.allDoneClicked = True
             # SHOW SELL BLOCK HEADERS
             self.showSellBlockHeader()
 
+    @pyqtSlot()
     # 07.07 sadeleştirildi
     def sliderOnChange(self, passed_widget):
         if not passed_widget.isHidden:
             slider = passed_widget.horizontalSlider
-            passed_widget.slider_label.setText(str(slider.value()))
-            
+            ratio = slider.value()
+            passed_widget.slider_label.setText(str(ratio))
+
+            index = self.to_be_sold.index(passed_widget)
+            if self.remaining_ratio_label.isHidden:
+                self.showRatioLabels()
+            remains = self.ratioRemainsCalc(index)
+            self.remaining_ratio_label.setText(
+                "Remaining ratio: " + str(remains))
+
+            self.sell_value_label.setText(
+                f"Sell value: {(100-remains)*self.sellVal/100}/{self.sellVal}")
+
         else:
             passed_widget.horizontalSlider.setValue(passed_widget.releaseVal)
 
@@ -427,25 +552,54 @@ class StockSeller(QMainWindow, Ui_MainWindow):
     def ratioRemainsCalc(self, until):
         ret_val = 0
         for i in range(until+1):
-            widget_i = self.shares_widgets[i]
+            widget_i = self.to_be_sold[i]
             slider_i = widget_i.horizontalSlider
             ret_val += slider_i.value()
         return 100-ret_val
-    
+
     @pyqtSlot()
     def logOut(self):
         self.return_to_login = True
         self.close()
 
-    def closeEvent(self, event) :
+    def closeEvent(self, event):
         if not self.return_to_login:
             sys.exit()
+
+
+def log_shares(id, stock_symbol, stock_quantity, value, operation):
+    try:
+        conn = sqlite3.connect('stock_seller.db')
+        cursor = conn.cursor()
+        query = "SELECT username FROM users WHERE userid = ?"
+        cursor.execute(query, (id,))
+        client = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+    except sqlite3.Error as error:
+        print("Failed to read data!")
+    finally:
+        if conn:
+            conn.close()
+
+    with open('log_shares.csv', 'a+', encoding="UTF-8", newline='') as file:
+        writer = csv.writer(file)
+        reader = csv.reader(file)
+        log_time = datetime.now()
+
+        if os.stat('log_shares.csv').st_size == 0:
+            writer.writerow(['Client', 'Time', 'Symbol',
+                            'Quantity', 'Operation', 'Value'])
+        writer.writerow([client, log_time, stock_symbol,
+                        stock_quantity, operation, value])
+
 
 def hash_pw(pw):
     h = sha256()
     pw = pw.encode("utf-8")
     h.update(pw)
     return h.hexdigest()
+
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -456,7 +610,7 @@ def main():
         login = Login_screen()
         if login.exec_() == QDialog.Accepted:
             app.exec()
-    
+
 
 if __name__ == "__main__":
     main()
